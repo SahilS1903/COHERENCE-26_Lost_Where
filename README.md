@@ -264,7 +264,66 @@ redis-server
 
 ---
 
-## 📁 Project Structure
+## � Importing Leads
+
+### Quick Start
+
+The platform supports **bulk lead import** via CSV or Excel files. Perfect for importing your existing contact lists!
+
+**Supported Formats:**
+- ✅ CSV (`.csv`)
+- ✅ Excel (`.xlsx`, `.xls`)
+- Maximum file size: 10MB
+
+### Required Columns
+- `email` (required) — Valid email address
+- `firstName` (required) — Contact's first name
+
+### Optional Columns
+- `lastName` — Contact's last name
+- `company` — Company name
+- Any additional columns are stored as custom fields
+
+### How to Import
+
+1. Navigate to the **Lead Tracker** page
+2. Click **"Import Leads"** button
+3. Select your target workflow
+4. Choose upload method:
+   - **Upload File**: Drag & drop CSV/Excel file (with preview)
+   - **Paste Data**: Copy and paste CSV text or JSON array
+5. Preview your data (first 5 rows shown)
+6. Click **"Import Leads"** to complete
+
+### Sample Template
+
+A sample CSV template is included in the project root:
+```csv
+email,firstName,lastName,company
+john.doe@example.com,John,Doe,Acme Corp
+jane.smith@tech.com,Jane,Smith,Tech Innovations
+```
+
+**See [LEAD_IMPORT_GUIDE.md](./LEAD_IMPORT_GUIDE.md) for detailed documentation.**
+
+### API Endpoint
+
+```bash
+POST /api/workflows/:workflowId/leads/upload-file
+Content-Type: multipart/form-data
+Authorization: Bearer <token>
+
+# Form field: file (CSV or Excel file)
+```
+
+**Import Behavior:**
+- Leads with existing emails in the workflow will be updated (upsert)
+- All imported leads start with `ACTIVE` status
+- Leads are immediately available for workflow processing
+
+---
+
+## �📁 Project Structure
 
 ```
 sales-outreach-platform/

@@ -1,0 +1,155 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkflowStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+}
+
+enum NodeType {
+  IMPORT_LEADS
+  AI_GENERATE
+  SEND_MESSAGE
+  WAIT
+  CHECK_REPLY
+  CONDITION
+  END
+}
+
+enum LeadStatus {
+  ACTIVE
+  PAUSED
+  DONE
+  BOUNCED
+}
+
+enum OutboxStatus {
+  PENDING
+  SENT
+  FAILED
+  SCHEDULED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  workflows    Workflow[]
+  
+  // Email/SMTP Configuration (for sending emails from user's own account)
+  smtpHost     String?    // e.g., smtp.gmail.com
+  smtpPort     Int?       @default(587)
+  smtpSecure   Boolean?   @default(false)
+  smtpUser     String?    // User's email address
+  smtpPassword String?    // App password (encrypted in production!)
+  smtpFromName String?    // Display name in emails
+}
+
+model Workflow {
+  id          String         @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  status      WorkflowStatus @default(DRAFT)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nodes Node[]
+  edges Edge[]
+  leads Lead[]
+}
+
+model Node {
+  id         String   @id @default(cuid())
+  workflowId String
+  type       NodeType
+  config     Json     @default("{}")
+  label      String
+  positionX  Float    @default(0)
+  positionY  Float    @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  workflow      Workflow      @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  outgoingEdges Edge[]        @relation("SourceNode")
+  incomingEdges Edge[]        @relation("TargetNode")
+  leadsHere     Lead[]        @relation("CurrentNode")
+  history       LeadHistory[]
+}
+
+model Edge {
+  id             String  @id @default(cuid())
+  workflowId     String
+  sourceNodeId   String
+  targetNodeId   String
+  conditionLabel String?
+
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  sourceNode Node     @relation("SourceNode", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  targetNode Node     @relation("TargetNode", fields: [targetNodeId], references: [id], onDelete: Cascade)
+}
+
+model Lead {
+  id            String     @id @default(cuid())
+  workflowId    String
+  email         String
+  firstName     String
+  lastName      String?
+  company       String?
+  customFields  Json       @default("{}")
+  currentNodeId String?
+  status        LeadStatus @default(ACTIVE)
+  retryCount    Int        @default(0)
+  repliedAt     DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  workflow    Workflow      @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  currentNode Node?         @relation("CurrentNode", fields: [currentNodeId], references: [id])
+  history     LeadHistory[]
+  outbox      OutboxQueue[]
+
+  @@unique([workflowId, email])
+}
+
+model LeadHistory {
+  id             String   @id @default(cuid())
+  leadId         String
+  nodeId         String
+  transitionedAt DateTime @default(now())
+  metadata       Json     @default("{}")
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+}
+
+model OutboxQueue {
+  id           String       @id @default(cuid())
+  leadId       String
+  channel      String       @default("email")
+  recipient    String
+  subject      String?
+  body         String
+  status       OutboxStatus @default(PENDING)
+  scheduledAt  DateTime     @default(now())
+  sentAt       DateTime?
+  attemptCount Int          @default(0)
+  errorMessage String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
