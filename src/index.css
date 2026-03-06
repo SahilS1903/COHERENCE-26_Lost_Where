@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 230 25% 5%;
+    --foreground: 220 20% 90%;
+    --card: 225 20% 8%;
+    --card-foreground: 220 20% 90%;
+    --popover: 225 20% 8%;
+    --popover-foreground: 220 20% 90%;
+    --primary: 190 100% 50%;
+    --primary-foreground: 230 25% 5%;
+    --secondary: 225 18% 14%;
+    --secondary-foreground: 220 20% 85%;
+    --muted: 220 15% 16%;
+    --muted-foreground: 220 10% 55%;
+    --accent: 190 100% 50%;
+    --accent-foreground: 230 25% 5%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --warning: 40 100% 50%;
+    --warning-foreground: 230 25% 5%;
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+    --border: 220 20% 18%;
+    --input: 220 20% 18%;
+    --ring: 190 100% 50%;
+    --radius: 0.75rem;
+    --sidebar-background: 225 20% 6%;
+    --sidebar-foreground: 220 20% 75%;
+    --sidebar-primary: 190 100% 50%;
+    --sidebar-primary-foreground: 230 25% 5%;
+    --sidebar-accent: 220 18% 12%;
+    --sidebar-accent-foreground: 220 20% 90%;
+    --sidebar-border: 220 20% 14%;
+    --sidebar-ring: 190 100% 50%;
+
+    --glass-bg: rgba(17, 19, 24, 0.6);
+    --glass-border: rgba(30, 37, 53, 0.8);
+    --glow-primary: 0 0 20px rgba(0, 212, 255, 0.15);
+    --glow-primary-strong: 0 0 30px rgba(0, 212, 255, 0.3);
+
+    --node-purple: 270 60% 55%;
+    --node-blue: 190 100% 50%;
+    --node-green: 142 70% 45%;
+    --node-amber: 40 100% 50%;
+    --node-orange: 25 95% 53%;
+    --node-pink: 330 80% 60%;
+    --node-red: 0 72% 51%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Syne', sans-serif;
+  }
+}
+
+@layer components {
+  .glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+  }
+  .glass-card-hover {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    transition: all 0.2s ease;
+  }
+  .glass-card-hover:hover {
+    border-color: hsl(var(--primary) / 0.3);
+    box-shadow: var(--glow-primary);
+  }
+  .glow-text {
+    text-shadow: 0 0 20px hsl(var(--primary) / 0.5);
+  }
+  .status-pending {
+    @apply bg-muted text-muted-foreground;
+  }
+  .status-in-progress {
+    @apply bg-primary/20 text-primary;
+  }
+  .status-replied, .status-completed {
+    @apply bg-green-500/20 text-green-400;
+  }
+  .status-exhausted, .status-failed {
+    @apply bg-destructive/20 text-red-400;
+  }
+  .status-sent {
+    @apply bg-primary/20 text-primary;
+  }
+  .status-rate-limited {
+    @apply bg-amber-500/20 text-amber-400;
+  }
+  .status-processing {
+    @apply bg-blue-500/20 text-blue-400;
+  }
+  .dot-grid {
+    background-image: radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+}
+
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+.react-flow__edge-path {
+  stroke-dasharray: 5 5;
+}
+.react-flow__edge-path.animated {
+  animation: flow-dash 1s linear infinite;
+}
+
+.react-flow__minimap {
+  background: hsl(var(--card)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  border-radius: var(--radius) !important;
+}
+.react-flow__controls {
+  background: hsl(var(--card)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  border-radius: var(--radius) !important;
+}
+.react-flow__controls button {
+  background: hsl(var(--card)) !important;
+  border-color: hsl(var(--border)) !important;
+  fill: hsl(var(--foreground)) !important;
+}
+.react-flow__controls button:hover {
+  background: hsl(var(--muted)) !important;
+}
