@@ -56,6 +56,7 @@ export const api = {
     remove: (id: string) => fetchApi(`/workflows/${id}`, { method: "DELETE" }),
     activate: (id: string) => fetchApi(`/workflows/${id}/activate`, { method: "PATCH" }),
     deactivate: (id: string) => fetchApi(`/workflows/${id}/deactivate`, { method: "PATCH" }),
+    replaceGraph: (id: string, data: any) => fetchApi(`/workflows/${id}/graph`, { method: "PUT", body: JSON.stringify(data) }),
   },
   nodes: {
     list: (workflowId: string) => fetchApi(`/workflows/${workflowId}/nodes`),

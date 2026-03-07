@@ -97,6 +97,16 @@ export default function LeadTracker() {
     enabled: !!workflows,
   });
 
+  const statusMutation = useMutation({
+    mutationFn: ({ leadId, status }: { leadId: string; status: string }) =>
+      api.leads.updateStatus(leadId, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      toast({ title: 'Status updated' });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Failed', description: e.message }),
+  });
+
   const { data: leadHistory, isLoading: historyLoading } = useQuery({
     queryKey: ["lead-history", selectedLead],
     queryFn: () => api.leads.history(selectedLead!),
@@ -551,9 +561,25 @@ export default function LeadTracker() {
                       {formatDistanceToNow(new Date(lead.updatedAt), { addSuffix: true })}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button variant="ghost" size="icon" className={`h-7 w-7 ${selectedLead === lead.id ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary"}`} onClick={() => setSelectedLead(lead.id === selectedLead ? null : lead.id)}>
-                        <Eye className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Select
+                          value={lead.status}
+                          onValueChange={(newStatus) => statusMutation.mutate({ leadId: lead.id, status: newStatus })}
+                        >
+                          <SelectTrigger className="h-7 w-24 text-[10px] font-mono bg-secondary border-border px-2">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ACTIVE">ACTIVE</SelectItem>
+                            <SelectItem value="PAUSED">PAUSED</SelectItem>
+                            <SelectItem value="DONE">DONE</SelectItem>
+                            <SelectItem value="BOUNCED">BOUNCED</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button variant="ghost" size="icon" className={`h-7 w-7 ${selectedLead === lead.id ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary"}`} onClick={() => setSelectedLead(lead.id === selectedLead ? null : lead.id)}>
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

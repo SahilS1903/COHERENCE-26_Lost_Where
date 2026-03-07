@@ -33,7 +33,7 @@ export function AppLayout() {
             <h2 className="font-heading font-semibold text-foreground text-lg hidden sm:block">OutreachAI Engine</h2>
           </div>
           <div className="flex items-center gap-3">
-            <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs" onClick={() => navigate("/workflows/new")}>
+            <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs" onClick={() => navigate("/workflows/new?blank=true")}>
               <Plus className="h-4 w-4 mr-1" /> New Workflow
             </Button>
             <DropdownMenu>

@@ -86,6 +86,7 @@ async function sendMessage(item) {
     });
     
     console.log(`[outboxWorker] ✅ SENT email from ${user.smtpUser} → ${recipient}: "${subject}"`);
+    console.log(`[outboxWorker] 📧 Message-ID: ${result?.messageId}`);
     return result;
     
   } else if (channel === 'sms') {
@@ -135,11 +136,16 @@ async function processItem(redisClient, item) {
   });
 
   try {
-    await sendMessage(item);
+    const result = await sendMessage(item);
 
     await prisma.outboxQueue.update({
       where: { id: item.id },
-      data: { status: 'SENT', sentAt: new Date(), errorMessage: null },
+      data: { 
+        status: 'SENT', 
+        sentAt: new Date(), 
+        messageId: result?.messageId || null, // Store Message-ID for tracking replies
+        errorMessage: null 
+      },
     });
   } catch (err) {
     console.error(`[outboxWorker] Send failed for item ${item.id}:`, err.message);
@@ -207,6 +213,14 @@ function startOutboxWorker() {
   // Poller: periodically pick up pending + due-scheduled items and enqueue them
   setInterval(async () => {
     try {
+      // Clean up old completed/failed jobs to prevent memory leak
+      try {
+        await outboxQueue.clean(60000, 500, 'completed');
+        await outboxQueue.clean(60000, 500, 'failed');
+      } catch (cleanErr) {
+        // Ignore cleanup errors
+      }
+      
       const items = await prisma.outboxQueue.findMany({
         where: {
           status: { in: ['PENDING', 'SCHEDULED'] },
@@ -223,12 +237,11 @@ function startOutboxWorker() {
         data: { outboxItemId: item.id },
         opts: {
           jobId: `outbox-${item.id}`,
-          attempts: 1, // retry logic is handled inside processItem
+          attempts: 1,
         },
       }));
 
       await outboxQueue.addBulk(jobs);
-      console.log(`[outboxWorker] Enqueued ${items.length} outbox items`);
     } catch (err) {
       console.error('[outboxWorker] Poller error:', err.message);
     }

@@ -6,44 +6,49 @@ const { generateMessage } = require('../../services/aiService');
  * Calls GPT-4o to generate a personalized message for the lead.
  * Stores result in lead.customFields.aiMessage
  * Node config shape: { goal?, product?, tone?, senderName?, senderCompany?, additionalInstructions? }
+ * 
+ * Smart Features:
+ * - Detects if lead has replied and generates contextual follow-ups
+ * - Uses lead.replyBody to craft intelligent responses to their questions
+ * - Automatically adjusts tone from cold outreach to warm conversation
  */
 async function handle(lead, node, _edges) {
-  console.log(`  [🤖 AI GENERATE] Starting for ${lead.email}`);
+  const fullLead = await prisma.lead.findUnique({
+    where: { id: lead.id },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      company: true,
+      customFields: true,
+      repliedAt: true,
+      replySubject: true,
+      replyBody: true,
+    },
+  });
   
   const config = node.config || {};
-  console.log(`  [⚙️  Config] Goal: ${config.goal || 'not set'}`);
-  console.log(`  [⚙️  Config] Product: ${config.product || 'not set'}`);
-  console.log(`  [⚙️  Config] Tone: ${config.tone || 'professional'}`);
-  console.log(`  [⚙️  Config] Sender: ${config.senderName || 'not set'} from ${config.senderCompany || 'not set'}`);
-  
-  console.log(`  [💬 AI API CALL] Generating message...`);
-  const startTime = Date.now();
-  
-  const result = await generateMessage(lead, config);
-  
-  const duration = Date.now() - startTime;
-  console.log(`  [✅ AI RESPONSE] Generated in ${duration}ms`);
-  console.log(`  [📊 Personalization Score] ${result.personalizationScore}/100`);
-  console.log(`  [📧 Subject] ${result.subject}`);
-  console.log(`  [📝 Body] ${result.body.substring(0, 100)}...`);
+  const result = await generateMessage(fullLead, config);
 
-  // Store the AI-generated message in customFields so downstream nodes (SEND_MESSAGE) can use it
+  console.log(`[AI] ${fullLead.email} → "${result.subject}" (score: ${result.personalizationScore}/100)`);
+
   const updatedFields = {
-    ...(lead.customFields || {}),
+    ...(fullLead.customFields || {}),
     aiMessage: {
       subject: result.subject,
       body: result.body,
       personalizationScore: result.personalizationScore,
       generatedAt: new Date().toISOString(),
+      isReplyFollowUp: !!fullLead.repliedAt,
     },
   };
 
   await prisma.lead.update({
-    where: { id: lead.id },
+    where: { id: fullLead.id },
     data: { customFields: updatedFields },
   });
 
-  console.log(`  [💾 STORED] AI message saved to lead.customFields`);
   return { advanced: true };
 }
 

@@ -12,5 +12,6 @@ router.put('/:id', ctrl.update);
 router.delete('/:id', ctrl.remove);
 router.patch('/:id/activate', ctrl.activate);
 router.patch('/:id/deactivate', ctrl.deactivate);
+router.put('/:id/graph', ctrl.replaceGraph);
 
 module.exports = router;

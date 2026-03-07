@@ -4,6 +4,7 @@ const { advance } = require('../engine/workflowEngine');
 const prisma = require('../lib/prisma');
 
 const WORKFLOW_SCHEDULE_INTERVAL_MS = 30_000; // Poll every 30 seconds
+const MAX_NODE_MEMORY_MB = 512; // Restart warning threshold
 
 /**
  * Workflow Worker
@@ -23,9 +24,8 @@ function startWorkflowWorker() {
     }
   );
 
-  worker.on('completed', (job) => {
-    console.log(`[✅ workflowWorker] Job ${job.id} completed successfully (lead: ${job.data.leadId})`);
-  });
+  // job completion is silent — only errors are worth seeing
+  worker.on('completed', () => {});
 
   worker.on('failed', (job, err) => {
     console.error(`[❌ workflowWorker] Job ${job?.id} failed:`, err.message);
@@ -52,8 +52,14 @@ function startWorkflowWorker() {
 }
 
 async function scheduleActiveLeads() {
-  console.log('\n[🔄 SCHEDULER] Checking for active leads...');
   const startTime = Date.now();
+  
+  try {
+    await workflowQueue.clean(60000, 1000, 'completed');
+    await workflowQueue.clean(60000, 1000, 'failed');
+  } catch (err) {
+    console.error('[⚠️  SCHEDULER] Failed to clean old jobs:', err.message);
+  }
   
   const activeLeads = await prisma.lead.findMany({
     where: {
@@ -61,15 +67,10 @@ async function scheduleActiveLeads() {
       workflow: { status: 'ACTIVE' },
     },
     select: { id: true, email: true, firstName: true },
-    take: 500, // safety cap per cycle
+    take: 100,
   });
-  
-  console.log(`[📊 SCHEDULER] Found ${activeLeads.length} active lead(s)`);
 
-  if (!activeLeads.length) {
-    console.log('[💤 SCHEDULER] No active leads to process');
-    return;
-  }
+  if (!activeLeads.length) return;
 
   const jobs = activeLeads.map((lead) => ({
     name: 'advance-lead',
@@ -83,8 +84,7 @@ async function scheduleActiveLeads() {
 
   await workflowQueue.addBulk(jobs);
   const duration = Date.now() - startTime;
-  console.log(`[✅ SCHEDULER] Scheduled ${activeLeads.length} lead(s) in ${duration}ms`);
-  console.log(`[📋 Leads] ${activeLeads.map(l => `${l.firstName} (${l.email})`).join(', ')}\n`);
+  console.log(`[SCHEDULER] Queued ${activeLeads.length} lead(s) in ${duration}ms — ${activeLeads.map(l => l.email).join(', ')}`);
 }
 
 module.exports = { startWorkflowWorker };

@@ -46,6 +46,7 @@ const App = () => (
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/workflows/new" element={<WorkflowBuilder />} />
+              <Route path="/workflows/:id" element={<WorkflowBuilder />} />
               <Route path="/leads" element={<LeadTracker />} />
               <Route path="/outbox" element={<OutboxMonitor />} />
             </Route>

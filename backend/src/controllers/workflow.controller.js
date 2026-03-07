@@ -84,4 +84,67 @@ async function deactivate(req, res) {
   res.json(workflow);
 }
 
-module.exports = { list, create, getOne, update, remove, activate, deactivate };
+// Atomically replace the entire node/edge graph for a workflow.
+// Accepts: { name?, description?, nodes: [...], edges: [...] }
+async function replaceGraph(req, res) {
+  const existing = await prisma.workflow.findFirst({
+    where: { id: req.params.id, userId: req.user.id },
+  });
+  if (!existing) return res.status(404).json({ error: 'Workflow not found' });
+
+  const { name, description, nodes = [], edges = [] } = req.body;
+
+  const workflow = await prisma.$transaction(async (tx) => {
+    // 1. Update metadata
+    const updated = await tx.workflow.update({
+      where: { id: req.params.id },
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(description !== undefined ? { description } : {}),
+      },
+    });
+
+    // 2. Delete all existing nodes (edges cascade via onDelete: Cascade)
+    await tx.node.deleteMany({ where: { workflowId: req.params.id } });
+
+    // 3. Re-create nodes and collect id mapping (frontend tempId → real id)
+    const createdNodes = await Promise.all(
+      nodes.map((n) =>
+        tx.node.create({
+          data: {
+            workflowId: req.params.id,
+            type: n.type,
+            label: n.label,
+            config: n.config || {},
+            positionX: n.positionX || 0,
+            positionY: n.positionY || 0,
+          },
+        })
+      )
+    );
+
+    // Build temp→real id map
+    const idMap = {};
+    nodes.forEach((n, i) => { idMap[n.tempId] = createdNodes[i].id; });
+
+    // 4. Re-create edges using real ids
+    await Promise.all(
+      edges.map((e) =>
+        tx.edge.create({
+          data: {
+            workflowId: req.params.id,
+            sourceNodeId: idMap[e.sourceTempId],
+            targetNodeId: idMap[e.targetTempId],
+            conditionLabel: e.conditionLabel || null,
+          },
+        })
+      )
+    );
+
+    return updated;
+  });
+
+  res.json(workflow);
+}
+
+module.exports = { list, create, getOne, update, remove, activate, deactivate, replaceGraph };

@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const prisma = require('../lib/prisma');
 
-const nodeTypes = ['IMPORT_LEADS', 'AI_GENERATE', 'SEND_MESSAGE', 'WAIT', 'CHECK_REPLY', 'CONDITION', 'END'];
+const nodeTypes = ['IMPORT_LEADS', 'AI_GENERATE', 'SEND_MESSAGE', 'WAIT', 'CHECK_REPLY', 'CONDITION', 'FOLLOW_UP_LOOP', 'END'];
 
 const createSchema = z.object({
   type: z.enum(nodeTypes),

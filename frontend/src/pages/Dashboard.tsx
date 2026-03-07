@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 
 interface DashboardStats {
   totalLeads: number;
@@ -45,6 +46,7 @@ const statusColor: Record<string, string> = {
 export default function Dashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["dashboard-stats"],
@@ -173,7 +175,13 @@ export default function Dashboard() {
                     <td className="px-4 py-3 text-muted-foreground text-xs">{formatDistanceToNow(new Date(wf.createdAt), { addSuffix: true })}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => navigate(`/workflows/${wf.id}`)}
+                          title="Edit workflow"
+                        >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-warning"

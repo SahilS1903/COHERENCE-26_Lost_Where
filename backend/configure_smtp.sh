@@ -10,7 +10,7 @@ echo ""
 
 # Step 1: Login
 echo "📝 Step 1: Login"
-read -p "Email: " USER_EMAIL
+read -p "Email: " USER_EMAIL. z
 read -sp "Password: " USER_PASSWORD
 echo ""
 

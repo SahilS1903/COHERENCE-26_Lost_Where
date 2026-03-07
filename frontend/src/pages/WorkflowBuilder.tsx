@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -22,12 +22,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Save, Play, Pause, LayoutGrid, X, Upload, Sparkles, Send, Clock, MessageSquareReply, GitFork, CircleStop, GripVertical, Loader2 } from "lucide-react";
+import { Save, Play, Pause, LayoutGrid, X, Upload, Sparkles, Send, Clock, MessageSquareReply, GitFork, CircleStop, GripVertical, Loader2, Mail, ArrowRight, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { EmailConfigDialog } from "@/components/EmailConfigDialog";
 
 const nodeTypeConfig = {
   importLeads: { label: "Import Leads", icon: Upload, color: "var(--node-purple)", hsl: "hsl(270, 60%, 55%)" },
@@ -70,24 +71,9 @@ const nodeTypes: NodeTypes = {
   workflowNode: WorkflowNode,
 };
 
-const initialNodes: Node[] = [
-  { id: "1", type: "workflowNode", position: { x: 300, y: 50 }, data: { type: "importLeads", label: "Import Leads" } },
-  { id: "2", type: "workflowNode", position: { x: 300, y: 170 }, data: { type: "aiGenerate", label: "AI Generate" } },
-  { id: "3", type: "workflowNode", position: { x: 300, y: 290 }, data: { type: "sendMessage", label: "Send Email" } },
-  { id: "4", type: "workflowNode", position: { x: 300, y: 410 }, data: { type: "waitDelay", label: "Wait 24h" } },
-  { id: "5", type: "workflowNode", position: { x: 300, y: 530 }, data: { type: "checkReply", label: "Check Reply" } },
-  { id: "6", type: "workflowNode", position: { x: 150, y: 650 }, data: { type: "condition", label: "Replied?" } },
-  { id: "7", type: "workflowNode", position: { x: 450, y: 650 }, data: { type: "end", label: "End" } },
-];
-
-const initialEdges: Edge[] = [
-  { id: "e1-2", source: "1", target: "2", animated: true, markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(190,100%,50%)" }, style: { stroke: "hsl(190,100%,50%)", strokeWidth: 2 } },
-  { id: "e2-3", source: "2", target: "3", animated: true, markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(190,100%,50%)" }, style: { stroke: "hsl(190,100%,50%)", strokeWidth: 2 } },
-  { id: "e3-4", source: "3", target: "4", animated: true, markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(190,100%,50%)" }, style: { stroke: "hsl(190,100%,50%)", strokeWidth: 2 } },
-  { id: "e4-5", source: "4", target: "5", animated: true, markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(190,100%,50%)" }, style: { stroke: "hsl(190,100%,50%)", strokeWidth: 2 } },
-  { id: "e5-6", source: "5", target: "6", animated: true, markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(190,100%,50%)" }, style: { stroke: "hsl(190,100%,50%)", strokeWidth: 2 } },
-  { id: "e5-7", source: "5", target: "7", animated: true, markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(190,100%,50%)" }, style: { stroke: "hsl(190,100%,50%)", strokeWidth: 2 } },
-];
+// Start with empty canvas - users can drag nodes from the palette
+const initialNodes: Node[] = [];
+const initialEdges: Edge[] = [];
 
 const paletteItems: { type: NodeTypeKey; label: string }[] = [
   { type: "importLeads", label: "Import Leads" },
@@ -100,19 +86,144 @@ const paletteItems: { type: NodeTypeKey; label: string }[] = [
 ];
 
 export default function WorkflowBuilder() {
+  const { id: workflowId } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isActive, setIsActive] = useState(true);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [emailConfigOpen, setEmailConfigOpen] = useState(false);
+  const [pendingConnection, setPendingConnection] = useState<Connection | null>(null);
+  const [conditionDialogOpen, setConditionDialogOpen] = useState(false);
+  const [conditionLabel, setConditionLabel] = useState("");
   const [workflowName, setWorkflowName] = useState("");
   const [workflowDescription, setWorkflowDescription] = useState("");
+  const [loading, setLoading] = useState(false);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const idCounter = useRef(8);
+  const idCounter = useRef(1); // Start from 1 for empty canvas
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+
+  // Fetch all workflows for the selector dropdown
+  const { data: workflows } = useQuery<any[]>({
+    queryKey: ["workflows"],
+    queryFn: async () => {
+      return await api.workflows.list();
+    },
+  });
+
+  // Auto-redirect to latest workflow when visiting /workflows/new
+  // Unless user explicitly wants a blank canvas (?blank=true)
+  useEffect(() => {
+    const wantsBlank = searchParams.get('blank') === 'true';
+    
+    if (!workflowId && workflows && workflows.length > 0 && !wantsBlank) {
+      // Sort by updatedAt descending to get the most recently modified workflow
+      const sortedWorkflows = [...workflows].sort((a, b) => 
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+      const latestWorkflow = sortedWorkflows[0];
+      console.log('🔀 Auto-redirecting to latest workflow:', latestWorkflow.name, latestWorkflow.id);
+      navigate(`/workflows/${latestWorkflow.id}`, { replace: true });
+    }
+  }, [workflows, workflowId, navigate, searchParams]);
+
+  // Load existing workflow if editing
+  useEffect(() => {
+    console.log('🔄 useEffect triggered, workflowId:', workflowId);
+    if (workflowId) {
+      loadWorkflow(workflowId);
+    } else {
+      // Reset to empty canvas for new workflow
+      console.log('🆕 Resetting to empty canvas');
+      setNodes([]);
+      setEdges([]);
+      setWorkflowName("");
+      setWorkflowDescription("");
+      setIsActive(true);
+      idCounter.current = 1;
+    }
+  }, [workflowId]);
+
+  const loadWorkflow = async (id: string) => {
+    setLoading(true);
+    try {
+      console.log('🔄 Loading workflow:', id);
+      const workflow: any = await api.workflows.get(id);
+      console.log('✅ Workflow loaded:', workflow);
+      
+      // Set workflow metadata
+      setWorkflowName(workflow.name);
+      setWorkflowDescription(workflow.description || "");
+      setIsActive(workflow.status === "ACTIVE");
+
+      // Map backend node types to frontend types
+      const backendToFrontendType: Record<string, NodeTypeKey> = {
+        IMPORT_LEADS: 'importLeads',
+        AI_GENERATE: 'aiGenerate',
+        SEND_MESSAGE: 'sendMessage',
+        WAIT: 'waitDelay',
+        CHECK_REPLY: 'checkReply',
+        CONDITION: 'condition',
+        END: 'end',
+      };
+
+      // Convert backend nodes to ReactFlow nodes
+      const loadedNodes: Node[] = (workflow.nodes || []).map((node: any) => ({
+        id: node.id,
+        type: 'workflowNode',
+        position: { x: node.positionX || 0, y: node.positionY || 0 },
+        data: {
+          type: backendToFrontendType[node.type] || 'end',
+          label: node.label,
+          config: node.config || {},
+        },
+      }));
+
+      // Convert backend edges to ReactFlow edges
+      const loadedEdges: Edge[] = (workflow.edges || []).map((edge: any) => ({
+        id: edge.id,
+        source: edge.sourceNodeId,
+        target: edge.targetNodeId,
+        animated: true,
+        markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(190,100%,50%)" },
+        style: { stroke: "hsl(190,100%,50%)", strokeWidth: 2 },
+        data: edge.conditionLabel ? { conditionLabel: edge.conditionLabel } : undefined,
+      }));
+
+      console.log('📦 Loaded nodes:', loadedNodes.length, 'edges:', loadedEdges.length);
+      
+      setNodes(loadedNodes);
+      setEdges(loadedEdges);
+
+      // Update idCounter to avoid conflicts with existing nodes
+      const maxId = loadedNodes.reduce((max, node) => {
+        const numId = parseInt(node.id);
+        return isNaN(numId) ? max : Math.max(max, numId);
+      }, 0);
+      idCounter.current = maxId + 1;
+      
+      console.log('✅ Workflow loaded successfully');
+
+      toast({
+        title: "✅ Workflow Loaded",
+        description: `"${workflow.name}" loaded successfully`,
+      });
+    } catch (error: any) {
+      console.error('❌ Load workflow error:', error);
+      toast({
+        variant: "destructive",
+        title: "Load Failed",
+        description: error.message || "Failed to load workflow",
+      });
+      navigate("/workflows/new?blank=true");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Map frontend node types to backend enum values
   const mapNodeTypeToBackend = (type: NodeTypeKey): string => {
@@ -134,59 +245,70 @@ export default function WorkflowBuilder() {
         throw new Error("Workflow name is required");
       }
 
-      // Create the workflow first
-      const workflow = await api.workflows.create({
-        name: workflowName.trim(),
-        description: workflowDescription.trim() || undefined,
-      });
+      console.log('💾 Saving workflow... workflowId:', workflowId, 'nodes:', nodes.length, 'edges:', edges.length);
 
-      // Then create nodes and edges
-      const nodePromises = nodes.map((node) =>
-        api.nodes.create(workflow.id, {
-          type: mapNodeTypeToBackend(node.data.type),
-          label: node.data.label,
-          config: node.data.config || {},
-          positionX: node.position.x,
-          positionY: node.position.y,
-        })
-      );
+      // Build the serialised graph using a local temp-id for each node so that
+      // edges can reference nodes before the backend has assigned real ids.
+      const serialisedNodes = nodes.map((node) => ({
+        tempId: node.id,
+        type: mapNodeTypeToBackend(node.data.type),
+        label: node.data.label,
+        config: node.data.config || {},
+        positionX: node.position.x,
+        positionY: node.position.y,
+      }));
 
-      const createdNodes = await Promise.all(nodePromises);
-      
-      // Map old node IDs to new node IDs
-      const nodeIdMap = new Map();
-      nodes.forEach((node, index) => {
-        nodeIdMap.set(node.id, createdNodes[index].id);
-      });
+      const serialisedEdges = edges.map((edge) => ({
+        sourceTempId: edge.source,
+        targetTempId: edge.target,
+        conditionLabel: edge.data?.conditionLabel || null,
+      }));
 
-      // Create edges with mapped node IDs
-      const edgePromises = edges.map((edge) => {
-        const edgeData: any = {
-          sourceNodeId: nodeIdMap.get(edge.source),
-          targetNodeId: nodeIdMap.get(edge.target),
-        };
-        // Only add conditionLabel if it exists
-        if (edge.data?.conditionLabel) {
-          edgeData.conditionLabel = edge.data.conditionLabel;
-        }
-        return api.edges.create(workflow.id, edgeData);
-      });
+      let workflow;
 
-      await Promise.all(edgePromises);
+      if (workflowId) {
+        // Atomically replace the entire graph on the server
+        console.log('📝 Replacing graph for existing workflow');
+        workflow = await api.workflows.replaceGraph(workflowId, {
+          name: workflowName.trim(),
+          description: workflowDescription.trim() || undefined,
+          nodes: serialisedNodes,
+          edges: serialisedEdges,
+        });
+      } else {
+        // Create a new workflow then populate its graph
+        console.log('✨ Creating new workflow');
+        workflow = await api.workflows.create({
+          name: workflowName.trim(),
+          description: workflowDescription.trim() || undefined,
+        });
+        console.log('✅ Workflow created:', workflow.id);
 
+        // Use replaceGraph so the same code path handles node/edge creation
+        await api.workflows.replaceGraph(workflow.id, {
+          nodes: serialisedNodes,
+          edges: serialisedEdges,
+        });
+        console.log('✅ Nodes and edges created successfully');
+      }
+
+      console.log('✅ Save complete, returning workflow:', workflow.id);
       return workflow;
     },
     onSuccess: (workflow) => {
+      console.log('🎉 Save success! Workflow:', workflow.id, 'Current workflowId:', workflowId);
       toast({
         title: "✅ Workflow Saved",
         description: `"${workflow.name}" has been saved successfully!`,
       });
       setSaveDialogOpen(false);
-      setWorkflowName("");
-      setWorkflowDescription("");
       queryClient.invalidateQueries({ queryKey: ["workflows"] });
-      // Optionally navigate to leads page
-      // navigate("/leads");
+      
+      // Navigate to edit URL so reloading shows the saved workflow
+      if (!workflowId) {
+        console.log('🚀 Navigating to /workflows/' + workflow.id);
+        navigate(`/workflows/${workflow.id}`, { replace: true });
+      }
     },
     onError: (error: any) => {
       toast({
@@ -197,11 +319,23 @@ export default function WorkflowBuilder() {
     },
   });
 
+  const buildEdge = useCallback((params: Connection, label?: string) => {
+    const edgeStyle = { animated: true, markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(190,100%,50%)" }, style: { stroke: "hsl(190,100%,50%)", strokeWidth: 2 } };
+    const extra = label ? { data: { conditionLabel: label }, label, labelStyle: { fill: 'hsl(40,100%,60%)', fontFamily: 'monospace', fontSize: 10 }, labelBgStyle: { fill: 'hsl(220,20%,12%)', fillOpacity: 0.9 } } : {};
+    return { ...params, ...edgeStyle, ...extra };
+  }, []);
+
   const onConnect = useCallback((params: Connection) => {
-    setEdges((eds) =>
-      addEdge({ ...params, animated: true, markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(190,100%,50%)" }, style: { stroke: "hsl(190,100%,50%)", strokeWidth: 2 } }, eds)
-    );
-  }, [setEdges]);
+    // If connecting FROM a checkReply node, ask for condition label
+    const sourceNode = nodes.find(n => n.id === params.source);
+    if (sourceNode?.data?.type === 'checkReply') {
+      setPendingConnection(params);
+      setConditionLabel('');
+      setConditionDialogOpen(true);
+      return;
+    }
+    setEdges((eds) => addEdge(buildEdge(params), eds));
+  }, [setEdges, nodes, buildEdge]);
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
@@ -270,6 +404,18 @@ export default function WorkflowBuilder() {
     );
   };
 
+  // Show loading spinner while loading workflow
+  if (loading) {
+    return (
+      <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
+        <div className="text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+          <p className="text-sm text-muted-foreground font-mono">Loading workflow...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-3.5rem)] animate-fade-in">
       {/* Left Palette */}
@@ -298,15 +444,66 @@ export default function WorkflowBuilder() {
       <div className="flex-1 relative" ref={reactFlowWrapper}>
         {/* Toolbar */}
         <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {/* Workflow Selector */}
+            <Select
+              value={workflowId || "new"}
+              onValueChange={(value) => {
+                if (value === "new") {
+                  navigate("/workflows/new?blank=true");
+                } else {
+                  navigate(`/workflows/${value}`);
+                }
+              }}
+            >
+              <SelectTrigger className="w-[250px] bg-card border-border">
+                <SelectValue placeholder="Select workflow" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="new">
+                  <span className="font-semibold">➕ New Workflow</span>
+                </SelectItem>
+                {workflows && workflows.length > 0 && (
+                  <>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">
+                      Your Workflows
+                    </div>
+                    {workflows.map((wf: any) => (
+                      <SelectItem key={wf.id} value={wf.id}>
+                        <div className="flex items-center gap-2">
+                          <span>{wf.name}</span>
+                          {wf.status === "ACTIVE" && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 bg-success/20 text-success border-success/30">
+                              ACTIVE
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+            
             <Button size="sm" variant="secondary" className="font-mono text-xs" onClick={() => setSaveDialogOpen(true)}>
               <Save className="h-3.5 w-3.5 mr-1" /> Save
+            </Button>
+            <Button size="sm" variant="secondary" className="font-mono text-xs" onClick={() => setEmailConfigOpen(true)}>
+              <Mail className="h-3.5 w-3.5 mr-1" /> Email Settings
             </Button>
             <Button
               size="sm"
               variant={isActive ? "default" : "secondary"}
               className={`font-mono text-xs ${isActive ? "bg-success text-success-foreground hover:bg-success/90" : ""}`}
-              onClick={() => setIsActive(!isActive)}
+              onClick={async () => {
+                if (!workflowId) { toast({ title: 'Save first', description: 'Save the workflow before activating it.' }); return; }
+                try {
+                  isActive ? await api.workflows.deactivate(workflowId) : await api.workflows.activate(workflowId);
+                  setIsActive(!isActive);
+                  toast({ title: isActive ? '⏸ Workflow Paused' : '▶ Workflow Activated' });
+                  queryClient.invalidateQueries({ queryKey: ['workflows'] });
+                } catch (e: any) { toast({ variant: 'destructive', title: 'Failed', description: e.message }); }
+              }}
             >
               {isActive ? <Pause className="h-3.5 w-3.5 mr-1" /> : <Play className="h-3.5 w-3.5 mr-1" />}
               {isActive ? "Pause" : "Activate"}
@@ -368,12 +565,67 @@ export default function WorkflowBuilder() {
                 <p className="text-sm text-foreground font-medium">{nodeTypeConfig[selectedNode.data.type as NodeTypeKey]?.label}</p>
               </div>
 
+              {selectedNode.data.type === "importLeads" && (
+                <div className="space-y-3">
+                  <div className="bg-muted/50 p-3 rounded-md border border-border">
+                    <p className="text-xs text-muted-foreground">
+                      📁 Import leads from CSV or Excel files. You can upload contact lists with custom fields.
+                    </p>
+                  </div>
+                  <Button 
+                    className="w-full" 
+                    onClick={() => navigate('/leads')}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Go to Lead Import Page
+                    <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p><strong>Tip:</strong> Your CSV should include columns like:</p>
+                    <ul className="list-disc list-inside ml-2 space-y-0.5">
+                      <li>email (required)</li>
+                      <li>name, company, title</li>
+                      <li>Any custom fields</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
               {selectedNode.data.type === "waitDelay" && (
                 <div className="space-y-2">
                   <Label className="text-xs font-mono text-muted-foreground">Duration</Label>
                   <div className="flex gap-2">
-                    <Input type="number" defaultValue={24} className="bg-secondary border-border" />
-                    <Select defaultValue="hours">
+                    <Input
+                      key={`${selectedNode.id}-${selectedNode.data.config?._unit || 'minutes'}`}
+                      type="number"
+                      min={1}
+                      defaultValue={(() => {
+                        const ms = selectedNode.data.config?.durationMs;
+                        if (!ms) return '';
+                        const unit = selectedNode.data.config?._unit || 'minutes';
+                        if (unit === 'minutes') return ms / 60000;
+                        if (unit === 'days') return ms / 86400000;
+                        return ms / 3600000;
+                      })()}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (isNaN(val) || val <= 0) return;
+                        const unit = selectedNode.data.config?._unit || 'minutes';
+                        const ms = unit === 'minutes' ? val * 60000 : unit === 'days' ? val * 86400000 : val * 3600000;
+                        updateNodeConfig(selectedNode.id, { durationMs: ms, _unit: unit });
+                      }}
+                      className="bg-secondary border-border"
+                    />
+                    <Select
+                      value={selectedNode.data.config?._unit || 'minutes'}
+                      onValueChange={(unit) => {
+                        const ms = selectedNode.data.config?.durationMs || 0;
+                        const prevUnit = selectedNode.data.config?._unit || 'minutes';
+                        const prevVal = prevUnit === 'minutes' ? ms / 60000 : prevUnit === 'days' ? ms / 86400000 : ms / 3600000;
+                        const newMs = unit === 'minutes' ? prevVal * 60000 : unit === 'days' ? prevVal * 86400000 : prevVal * 3600000;
+                        updateNodeConfig(selectedNode.id, { durationMs: newMs, _unit: unit });
+                      }}
+                    >
                       <SelectTrigger className="w-28 bg-secondary border-border"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="minutes">Minutes</SelectItem>
@@ -382,6 +634,9 @@ export default function WorkflowBuilder() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {selectedNode.data.config?.durationMs > 0 && (
+                    <p className="text-xs text-muted-foreground font-mono">= {(selectedNode.data.config.durationMs / 60000).toFixed(1)} min ({selectedNode.data.config.durationMs}ms)</p>
+                  )}
                 </div>
               )}
 
@@ -485,6 +740,57 @@ export default function WorkflowBuilder() {
                   <Input defaultValue="No Reply" className="bg-secondary border-border" placeholder="False branch" />
                 </div>
               )}
+
+              {selectedNode.data.type === "end" && (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-mono text-muted-foreground">Custom Label (Optional)</Label>
+                    <Input
+                      placeholder="e.g., End (Replied), End (No Reply), Complete"
+                      value={selectedNode.data.label || ''}
+                      onChange={(e) => {
+                        setNodes((nds) =>
+                          nds.map((node) =>
+                            node.id === selectedNode.id
+                              ? { ...node, data: { ...node.data, label: e.target.value || 'End' } }
+                              : node
+                          )
+                        );
+                        setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, label: e.target.value || 'End' } });
+                      }}
+                      className="bg-secondary border-border text-xs"
+                    />
+                  </div>
+                  <div className="bg-muted/50 p-3 rounded-md border border-border">
+                    <p className="text-xs text-muted-foreground">
+                      🏁 Use custom labels to differentiate multiple end nodes:
+                    </p>
+                    <ul className="list-disc list-inside ml-2 space-y-0.5 text-xs text-muted-foreground mt-2">
+                      <li><strong>End (Replied)</strong> - When lead responds</li>
+                      <li><strong>End (No Reply)</strong> - When lead doesn't respond</li>
+                      <li><strong>End (Unsubscribe)</strong> - When lead opts out</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {selectedNode.data.type === "checkReply" && (
+                <div className="space-y-3">
+                  <div className="bg-muted/50 p-3 rounded-md border border-border">
+                    <p className="text-xs text-muted-foreground">
+                      📨 Checks if the lead has replied to any previous email in this workflow via IMAP.
+                    </p>
+                  </div>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p><strong>How it works:</strong></p>
+                    <ul className="list-disc list-inside ml-2 space-y-0.5">
+                      <li>Monitors your inbox every 60 seconds</li>
+                      <li>Matches replies using Message-ID tracking</li>
+                      <li>Routes to different paths based on reply status</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-auto flex gap-2 pt-4 border-t border-border">
@@ -499,12 +805,68 @@ export default function WorkflowBuilder() {
         )}
       </AnimatePresence>
 
+      {/* Condition Label Dialog — appears when drawing an edge from CHECK_REPLY */}
+      <Dialog open={conditionDialogOpen} onOpenChange={setConditionDialogOpen}>
+        <DialogContent className="sm:max-w-[380px]">
+          <DialogHeader>
+            <DialogTitle>Set Branch Condition</DialogTitle>
+            <DialogDescription>
+              Choose what condition this edge represents from the Check Reply node.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Button className="w-full" variant="outline"
+              onClick={() => {
+                if (pendingConnection) setEdges(eds => addEdge(buildEdge(pendingConnection, 'replied'), eds));
+                setConditionDialogOpen(false); setPendingConnection(null);
+              }}>
+              ✅ replied — lead responded to the email
+            </Button>
+            <Button className="w-full" variant="outline"
+              onClick={() => {
+                if (pendingConnection) setEdges(eds => addEdge(buildEdge(pendingConnection, 'no_reply'), eds));
+                setConditionDialogOpen(false); setPendingConnection(null);
+              }}>
+              ❌ no_reply — lead did not respond
+            </Button>
+            <div className="flex gap-2">
+              <Input
+                placeholder="custom label..."
+                value={conditionLabel}
+                onChange={e => setConditionLabel(e.target.value)}
+                className="bg-secondary border-border text-xs"
+              />
+              <Button onClick={() => {
+                if (pendingConnection && conditionLabel.trim()) setEdges(eds => addEdge(buildEdge(pendingConnection, conditionLabel.trim()), eds));
+                setConditionDialogOpen(false); setPendingConnection(null);
+              }} disabled={!conditionLabel.trim()}>Add</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Configuration Dialog */}
+      <EmailConfigDialog
+        open={emailConfigOpen}
+        onOpenChange={setEmailConfigOpen}
+        onConfigured={() => {
+          toast({
+            title: "✅ Email Configured",
+            description: "Your email settings are ready. You can now send workflow emails.",
+          });
+        }}
+      />
+
       {/* Save Dialog */}
       <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Save Workflow</DialogTitle>
-            <DialogDescription>Give your workflow a name to save it and start importing leads.</DialogDescription>
+            <DialogTitle>{workflowId ? "Update Workflow" : "Save Workflow"}</DialogTitle>
+            <DialogDescription>
+              {workflowId 
+                ? "Update your workflow name and description." 
+                : "Give your workflow a name to save it and start importing leads."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -538,12 +900,12 @@ export default function WorkflowBuilder() {
               {saveMutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Saving...
+                  {workflowId ? "Updating..." : "Saving..."}
                 </>
               ) : (
                 <>
                   <Save className="h-4 w-4 mr-2" />
-                  Save Workflow
+                  {workflowId ? "Update Workflow" : "Save Workflow"}
                 </>
               )}
             </Button>
