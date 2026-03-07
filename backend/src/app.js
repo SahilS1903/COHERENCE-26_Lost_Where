@@ -1,6 +1,7 @@
 require('dotenv').config();
 require('express-async-errors');
 
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 
@@ -12,12 +13,14 @@ const edgeRoutes = require('./routes/edge.routes');
 const leadRoutes = require('./routes/lead.routes');
 const outboxRoutes = require('./routes/outbox.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const attachmentRoutes = require('./routes/attachment.routes');
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -35,6 +38,7 @@ app.use('/api/workflows', leadRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/outbox', outboxRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/attachments', attachmentRoutes);
 
 // Test route for debugging
 app.get('/api/test-routes', (req, res) => {

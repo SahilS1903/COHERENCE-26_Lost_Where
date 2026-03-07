@@ -7,8 +7,13 @@
 async function handle(lead, node, edges, lastTransitionedAt) {
   const config = node.config || {};
 
+  // Only count a reply that arrived AFTER the lead entered this node.
+  // This prevents permanent repliedAt from looping the replied branch forever.
   if (lead.repliedAt) {
-    return { advanced: true, conditionResult: 'replied' };
+    const enteredAt = lastTransitionedAt ? new Date(lastTransitionedAt) : new Date(0);
+    if (new Date(lead.repliedAt) > enteredAt) {
+      return { advanced: true, conditionResult: 'replied' };
+    }
   }
 
   const waitMs = config.waitForReplyMs || 0;

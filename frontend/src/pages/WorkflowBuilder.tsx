@@ -402,6 +402,11 @@ export default function WorkflowBuilder() {
           : node
       )
     );
+    setSelectedNode((prev) =>
+      prev && prev.id === nodeId
+        ? { ...prev, data: { ...prev.data, config: { ...prev.data.config, ...config } } }
+        : prev
+    );
   };
 
   // Show loading spinner while loading workflow
@@ -719,17 +724,86 @@ export default function WorkflowBuilder() {
               )}
 
               {selectedNode.data.type === "sendMessage" && (
-                <div className="space-y-2">
-                  <Label className="text-xs font-mono text-muted-foreground">Channel</Label>
-                  <Select defaultValue="email">
-                    <SelectTrigger className="bg-secondary border-border"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="email">Email</SelectItem>
-                      <SelectItem value="linkedin">LinkedIn</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Label className="text-xs font-mono text-muted-foreground">Fallback Template</Label>
-                  <Textarea defaultValue="Hi {{first_name}}, I wanted to reach out..." className="bg-secondary border-border min-h-[80px] text-xs font-mono" />
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-mono text-muted-foreground">Channel</Label>
+                    <Select defaultValue="email">
+                      <SelectTrigger className="bg-secondary border-border"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="email">Email</SelectItem>
+                        <SelectItem value="linkedin">LinkedIn</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-mono text-muted-foreground">Fallback Template</Label>
+                    <Textarea defaultValue="Hi {{first_name}}, I wanted to reach out..." className="bg-secondary border-border min-h-[80px] text-xs font-mono" />
+                  </div>
+
+                  {/* Attachments (brochures / catalogs) */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-mono text-muted-foreground">Attachments (Optional)</Label>
+
+                    {/* List already-attached files */}
+                    {(selectedNode.data.config?.attachments || []).map((att: { filename: string; path: string; storedName: string; mimetype: string }, idx: number) => (
+                      <div key={idx} className="flex items-center gap-2 bg-secondary rounded px-2 py-1">
+                        <span className="text-xs flex-1 truncate text-foreground">{att.filename}</span>
+                        <button
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          title="Remove"
+                          onClick={async () => {
+                            try {
+                              await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/attachments/${att.storedName}`, {
+                                method: 'DELETE',
+                                headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                              });
+                            } catch (_) { /* ignore */ }
+                            const next = (selectedNode.data.config?.attachments || []).filter((_: unknown, i: number) => i !== idx);
+                            updateNodeConfig(selectedNode.id, { attachments: next });
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Upload button */}
+                    <label className="flex items-center gap-2 cursor-pointer border border-dashed border-border rounded px-3 py-2 hover:border-primary transition-colors">
+                      <span className="text-xs text-muted-foreground">📎 Attach PDF or image (max 10 MB)</span>
+                      <input
+                        type="file"
+                        accept=".pdf,image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const formData = new FormData();
+                          formData.append('file', file);
+                          try {
+                            const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/attachments/upload`, {
+                              method: 'POST',
+                              headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                              body: formData,
+                            });
+                            if (!res.ok) throw new Error(await res.text());
+                            const data = await res.json();
+                            const existing = selectedNode.data.config?.attachments || [];
+                            updateNodeConfig(selectedNode.id, {
+                              attachments: [...existing, {
+                                filename: data.filename,
+                                storedName: data.storedName,
+                                path: data.path,
+                                mimetype: data.mimetype,
+                              }],
+                            });
+                          } catch (err: unknown) {
+                            alert(`Upload failed: ${err instanceof Error ? err.message : String(err)}`);
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
                 </div>
               )}
 

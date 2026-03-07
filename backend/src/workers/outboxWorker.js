@@ -46,7 +46,7 @@ async function checkRateLimit(redisClient, workflowId) {
  * @param {object} item - OutboxQueue record
  */
 async function sendMessage(item) {
-  const { channel, recipient, subject, body, lead } = item;
+  const { channel, recipient, subject, body, attachments, lead } = item;
 
   // Get the workflow owner's SMTP configuration
   const workflow = await prisma.workflow.findUnique({
@@ -83,6 +83,7 @@ async function sendMessage(item) {
       text: body,
       html: `<div style="font-family: Arial, sans-serif; line-height: 1.6;">${body.replace(/\n/g, '<br>')}</div>`,
       smtpConfig,
+      attachments: Array.isArray(attachments) ? attachments : [],
     });
     
     console.log(`[outboxWorker] ✅ SENT email from ${user.smtpUser} → ${recipient}: "${subject}"`);

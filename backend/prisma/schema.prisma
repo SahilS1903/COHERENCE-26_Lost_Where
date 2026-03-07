@@ -155,5 +155,7 @@ model OutboxQueue {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
+  attachments  Json         @default("[]")  // [{filename, path, mimetype}]
+
   lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
 }

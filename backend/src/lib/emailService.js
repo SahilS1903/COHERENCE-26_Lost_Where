@@ -47,7 +47,7 @@ function createTransporter(smtpConfig) {
  * @param {string} options.smtpConfig.fromName - Display name
  * @returns {Promise<Object>} - Send result
  */
-async function sendEmail({ to, subject, text, html, smtpConfig }) {
+async function sendEmail({ to, subject, text, html, smtpConfig, attachments = [] }) {
   if (!smtpConfig) {
     throw new Error('SMTP configuration required. Please configure your email settings.');
   }
@@ -61,6 +61,16 @@ async function sendEmail({ to, subject, text, html, smtpConfig }) {
     text,
     html: html || text,
   };
+
+  // Attach brochures / PDFs / images when provided
+  if (attachments && attachments.length > 0) {
+    mailOptions.attachments = attachments.map((att) => ({
+      filename: att.filename,
+      path: att.path,      // absolute path on disk
+      contentType: att.mimetype,
+    }));
+    console.log(`[Email Service] 📎 Attachments: ${attachments.map(a => a.filename).join(', ')}`);
+  }
 
   console.log(`[Email Service] 📤 Sending email via ${smtpConfig.user}`);
   console.log(`[Email Service] 📧 To: ${to}`);

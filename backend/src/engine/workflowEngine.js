@@ -122,6 +122,8 @@ async function assignNode(lead, node, metadata = {}) {
 /**
  * Pick the correct outgoing edge given a conditionResult label.
  * If conditionResult is undefined, take the first (and usually only) edge.
+ * If conditionResult IS defined but no matching edge exists, return null
+ * (workflow is misconfigured — safer to stop than to take the wrong branch).
  */
 function resolveNextNode(edges, conditionResult) {
   if (!edges || edges.length === 0) return null;
@@ -131,7 +133,9 @@ function resolveNextNode(edges, conditionResult) {
       (e) => e.conditionLabel === conditionResult
     );
     if (matched) return { id: matched.targetNodeId };
-    // Fall back to first edge if no condition match
+    // No matching edge — do NOT fall back to a random edge.
+    console.warn(`[ENGINE] No edge found for conditionResult="${conditionResult}". Stopping lead.`);
+    return null;
   }
 
   // Default: take first outgoing edge
